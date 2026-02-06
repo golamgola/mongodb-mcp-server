@@ -1,5 +1,6 @@
 import { v4 as uuid } from "uuid";
-import { experimental_createMCPClient as createMCPClient, tool as createVercelTool } from "ai";
+import { tool as createVercelTool } from "ai";
+import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import type { Tool } from "ai";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -91,11 +92,15 @@ export class AccuracyTestingClient {
             return [`--${key}`, value];
         });
 
-        const args = [MCP_SERVER_CLI_SCRIPT, "--connectionString", mdbConnectionString, ...additionalArgs];
+        const args = [MCP_SERVER_CLI_SCRIPT, mdbConnectionString, ...additionalArgs];
 
         const clientTransport = new StdioClientTransport({
             command: process.execPath,
             args,
+            env: {
+                ...process.env,
+                DO_NOT_TRACK: "1",
+            },
         });
 
         const client = await createMCPClient({

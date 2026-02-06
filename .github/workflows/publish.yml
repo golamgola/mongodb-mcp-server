@@ -11,33 +11,31 @@ jobs:
     permissions: {}
     outputs:
       VERSION_EXISTS: ${{ steps.check-version.outputs.VERSION_EXISTS }}
-      VERSION: ${{ steps.get-version.outputs.VERSION }}
+      NPM_VERSION: ${{ steps.get-version.outputs.NPM_VERSION }}
+      GIT_TAG_VERSION: ${{ steps.get-version.outputs.GIT_TAG_VERSION }}
       RELEASE_CHANNEL: ${{ steps.npm-tag.outputs.RELEASE_CHANNEL }}
     steps:
       - uses: GitHubSecurityLab/actions-permissions/monitor@v1
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: package.json
-          registry-url: "https://registry.npmjs.org"
-          cache: "npm"
       - name: Get version
         id: get-version
         shell: bash
         run: |
-          set +e
+          set -e
 
-          VERSION=v$(jq -r '.version' < package.json)
-          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          NPM_VERSION=$(npm pkg get version | tr -d '"')
+          GIT_TAG_VERSION="v${NPM_VERSION}"
+          echo "NPM_VERSION=${NPM_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "GIT_TAG_VERSION=${GIT_TAG_VERSION}" >> "$GITHUB_OUTPUT"
       - name: Check if version already exists
         id: check-version
         shell: bash
         run: |
           set +e
 
-          git rev-parse "${{ steps.get-version.outputs.VERSION }}" >/dev/null 2>&1
+          git rev-parse "${{ steps.get-version.outputs.GIT_TAG_VERSION }}" >/dev/null 2>&1
           if [[ $? -eq 0 ]]; then
             echo "VERSION_EXISTS=true" >> "$GITHUB_OUTPUT"
           else
@@ -48,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          VERSION="${{ steps.get-version.outputs.VERSION }}"
+          VERSION="${{ steps.get-version.outputs.GIT_TAG_VERSION }}"
 
           # Extract the release channel (latest, alpha, beta, rc)
           if [[ $VERSION =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-(.+))?$ ]]; then
@@ -62,13 +60,13 @@ jobs:
               RELEASE_CHANNEL="latest"
             fi
           else
-            echo "::error title=Invalid Version::Encountered unexpected version ${{ steps.get-version.outputs.VERSION }}, cannot proceed!"
+            echo "::error title=Invalid Version::Encountered unexpected version ${{ steps.get-version.outputs.GIT_TAG_VERSION }}, cannot proceed!"
             exit 1
           fi
 
           echo "RELEASE_CHANNEL=${RELEASE_CHANNEL}" >> "$GITHUB_OUTPUT"
       - name: Output deployment info
-        run: echo "::notice title=Deployment Info::Deploying version ${{ steps.get-version.outputs.VERSION }} to channel ${{ steps.npm-tag.outputs.RELEASE_CHANNEL }}"
+        run: echo "::notice title=Deployment Info::Deploying version ${{ steps.get-version.outputs.GIT_TAG_VERSION }} to channel ${{ steps.npm-tag.outputs.RELEASE_CHANNEL }}"
 
   publish:
     runs-on: ubuntu-latest
@@ -81,34 +79,66 @@ jobs:
     if: needs.check.outputs.VERSION_EXISTS == 'false'
     steps:
       - uses: GitHubSecurityLab/actions-permissions/monitor@v1
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           registry-url: "https://registry.npmjs.org"
-          cache: "npm"
+          cache: "pnpm"
 
       - name: Build package
         run: |
-          npm ci
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
       - name: Publish to NPM
-        run: npm publish --tag ${{ needs.check.outputs.RELEASE_CHANNEL }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --tag ${{ needs.check.outputs.RELEASE_CHANNEL }} --no-git-checks
 
       - name: Publish git release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create ${{ needs.check.outputs.VERSION }} --title "${{ needs.check.outputs.VERSION }}" --generate-notes --target ${{ github.sha }} ${{ (needs.check.outputs.RELEASE_CHANNEL != 'latest' && '--prerelease') || ''}}
+          gh release create ${{ needs.check.outputs.GIT_TAG_VERSION }} --title "${{ needs.check.outputs.GIT_TAG_VERSION }}" --generate-notes --target ${{ github.sha }} ${{ (needs.check.outputs.RELEASE_CHANNEL != 'latest' && '--prerelease') || ''}}
 
-      - name: Install MCP Publisher
+      - name: Wait for package to be available on npm
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          PACKAGE_NAME=$(jq -r '.name' < package.json)
+          NPM_VERSION="${{ needs.check.outputs.NPM_VERSION }}"
+          MAX_ATTEMPTS=30
+          SLEEP_SECONDS=10
 
-      - name: Login to MCP Registry
-        run: ./mcp-publisher login github-oidc
+          echo "Waiting for ${PACKAGE_NAME}@${NPM_VERSION} to be available on npm..."
 
-      - name: Publish to MCP Registry
-        run: ./mcp-publisher publish
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            if npm view "${PACKAGE_NAME}@${NPM_VERSION}" version >/dev/null 2>&1; then
+              echo "✓ Package ${PACKAGE_NAME}@${NPM_VERSION} is now available on npm"
+              exit 0
+            fi
+            echo "Attempt $i/$MAX_ATTEMPTS: Package not yet available, waiting ${SLEEP_SECONDS}s..."
+            sleep $SLEEP_SECONDS
+          done
+
+          echo "::error::Package ${PACKAGE_NAME}@${NPM_VERSION} did not become available after $((MAX_ATTEMPTS * SLEEP_SECONDS)) seconds"
+          exit 1
+
+  docker-push:
+    needs: [check, publish]
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+    with:
+      npm_version: ${{ needs.check.outputs.NPM_VERSION }}
+      release_channel: ${{ needs.check.outputs.RELEASE_CHANNEL }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  mcp-publish:
+    needs: [check, docker-push]
+    if: needs.check.outputs.VERSION_EXISTS == 'false' && needs.check.outputs.RELEASE_CHANNEL == 'latest'
+    uses: ./.github/workflows/mcp-publish.yml
+    permissions:
+      id-token: write
+      contents: read
