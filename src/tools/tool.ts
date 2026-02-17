@@ -19,9 +19,16 @@ export type ToolArgs<T extends ZodRawShape> = {
     [K in keyof T]: z.infer<T[K]>;
 };
 
-export type ToolExecutionContext = {
+export interface ToolExecutionContext {
     signal: AbortSignal;
-};
+    /**
+     * Request context object available only when running atop
+     * StreamableHttpTransport.
+     */
+    requestInfo?: {
+        headers?: Record<string, unknown>;
+    };
+}
 
 /**
  * The type of operation the tool performs. This is used when evaluating if a tool is allowed to run based on
@@ -55,7 +62,13 @@ export type ToolCategory = "mongodb" | "atlas" | "atlas-local";
  *
  * See `Server.registerTools` method in `src/server.ts` for further reference.
  */
-export type ToolConstructorParams = {
+export type ToolConstructorParams<TContext = unknown> = {
+    /**
+     * The unique name of this tool (injected from the static
+     * `toolName` property on the Tool class).
+     */
+    name: string;
+
     /**
      * The category that the tool belongs to (injected from the static
      * `category` property on the Tool class).
@@ -97,14 +110,34 @@ export type ToolConstructorParams = {
      */
     elicitation: Elicitation;
     uiRegistry?: UIRegistry;
+
+    /**
+     * Optional custom context object that will be available to tools.
+     *
+     * Library consumers can provide custom context data that will be
+     * available during tool execution. This is useful for passing shared
+     * services used by multiple tools.
+     *
+     * @example
+     * ```typescript
+     * const runner = new StreamableHttpRunner({
+     *   userConfig: { ... },
+     *   toolContext: {
+     *     tenantId: "my-tenant",
+     *     userId: "user-123",
+     *   },
+     * });
+     * ```
+     */
+    context?: TContext;
 };
 
 /**
  * The type that all tool classes must conform to when implementing custom tools
  * for the MongoDB MCP Server.
  *
- * This type enforces that tool classes have static properties `category` and
- * `operationType` which are injected during instantiation of tool classes.
+ * This type enforces that tool classes have static properties `toolName`, `category`,
+ * and `operationType` which are injected during instantiation of tool classes.
  *
  * @example
  * ```typescript
@@ -114,11 +147,11 @@ export type ToolConstructorParams = {
  *
  * class MyCustomTool extends ToolBase {
  *   // Required static properties for ToolClass conformance
+ *   static toolName = "my-custom-tool";
  *   static category: ToolCategory = "mongodb";
  *   static operationType: OperationType = "read";
  *
  *   // Required abstract properties
- *   override name = "my-custom-tool";
  *   public description = "My custom tool description";
  *   public argsShape = {
  *     query: z.string().describe("The query parameter"),
@@ -147,7 +180,15 @@ export type ToolConstructorParams = {
  */
 export type ToolClass = {
     /** Constructor signature for the tool class */
-    new (params: ToolConstructorParams): ToolBase;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new (params: ToolConstructorParams<any>): ToolBase<any>;
+
+    /**
+     * The unique name of this tool.
+     *
+     * Must be unique across all tools in the server.
+     */
+    toolName: string;
 
     /** The category that the tool belongs to */
     category: ToolCategory;
@@ -166,9 +207,9 @@ export type ToolClass = {
  *
  * To create a custom tool, you must:
  * 1. Extend the `ToolBase` class
- * 2. Define static properties: `category` and `operationType`
- * 3. Implement required abstract members: `name`, `description`,
- *    `argsShape`, `execute()`, `resolveTelemetryMetadata()`
+ * 2. Define static properties: `toolName`, `category`, and `operationType`
+ * 3. Implement required abstract members: `description`, `argsShape`,
+ *    `execute()`, `resolveTelemetryMetadata()`
  *
  * @example Basic Custom Tool
  * ```typescript
@@ -177,12 +218,12 @@ export type ToolClass = {
  * import { z } from "zod";
  *
  * class MyCustomTool extends ToolBase {
- *   // Required static property for ToolClass conformance
+ *   // Required static properties for ToolClass conformance
+ *   static toolName = "my-custom-tool";
  *   static category: ToolCategory = "mongodb";
  *   static operationType: OperationType = "read";
  *
  *   // Required abstract properties
- *   override name = "my-custom-tool";
  *   public description = "My custom tool description";
  *   public argsShape = {
  *     query: z.string().describe("The query parameter"),
@@ -221,6 +262,7 @@ export type ToolClass = {
  *
  * The following properties are automatically set when the tool is instantiated
  * by the server (derived from the static properties):
+ * - `name` - The tool's unique name (from static `toolName`)
  * - `category` - The tool's category (from static `category`)
  * - `operationType` - The tool's operation type (from static `operationType`)
  *
@@ -234,20 +276,20 @@ export type ToolClass = {
  * @see {@link ToolConstructorParams} for the parameters passed to the
  * constructor
  */
-export abstract class ToolBase {
+export abstract class ToolBase<TContext = unknown> {
     /**
      * The unique name of this tool.
      *
      * Must be unique across all tools in the server.
      */
-    public abstract name: string;
+    public readonly name: string;
 
     /**
      * The category of this tool.
      *
      * @see {@link ToolCategory} for the available tool categories.
      */
-    public category: ToolCategory;
+    public readonly category: ToolCategory;
 
     /**
      * The type of operation this tool performs.
@@ -257,7 +299,7 @@ export abstract class ToolBase {
      *
      * @see {@link OperationType} for the available tool operations.
      */
-    public operationType: OperationType;
+    public readonly operationType: OperationType;
 
     /**
      * Human-readable description of what the tool does.
@@ -386,11 +428,12 @@ export abstract class ToolBase {
      * result conforming to the MCP protocol.
      *
      * @param args - The validated arguments passed to the tool
+     * @param context - The execution context containing signal and optional request info
      * @returns A promise resolving to the tool execution result
      *
      * @example
      * ```typescript
-     * protected async execute(args: { query: string }): Promise<CallToolResult> {
+     * protected async execute(args: { query: string }, context): Promise<CallToolResult> {
      *   const results = await this.session.db.collection('items').find({
      *     name: { $regex: args.query, $options: 'i' }
      *   }).toArray();
@@ -406,14 +449,11 @@ export abstract class ToolBase {
      */
     protected abstract execute(
         args: ToolArgs<typeof this.argsShape>,
-        { signal }: ToolExecutionContext
+        context: ToolExecutionContext
     ): Promise<CallToolResult>;
 
     /** This is used internally by the server to invoke the tool. It can also be run manually to call the tool directly. */
-    public async invoke(
-        args: ToolArgs<typeof this.argsShape>,
-        { signal }: ToolExecutionContext
-    ): Promise<CallToolResult> {
+    public async invoke(args: ToolArgs<typeof this.argsShape>, context: ToolExecutionContext): Promise<CallToolResult> {
         let startTime: number = Date.now();
 
         try {
@@ -446,7 +486,7 @@ export abstract class ToolBase {
                 noRedaction: true,
             });
 
-            const toolCallResult = await this.execute(args, { signal });
+            const toolCallResult = await this.execute(args, context);
             const result = await this.appendUIResource(toolCallResult);
 
             this.emitToolEvent(args, { startTime, result });
@@ -542,7 +582,27 @@ export abstract class ToolBase {
      */
     protected readonly elicitation: Elicitation;
     private readonly uiRegistry?: UIRegistry;
+
+    /**
+     * Optional custom context object provided during tool construction.
+     *
+     * Library consumers can use this for passing shared services used by multiple tools.
+     *
+     * @example
+     * ```typescript
+     * class MyTool extends ToolBase {
+     *   protected async execute(args, { authService }) {
+     *     // Access custom context
+     *     const user = await authService.getUser();
+     *     // ...
+     *   }
+     * }
+     * ```
+     */
+    protected readonly context?: TContext;
+
     constructor({
+        name,
         category,
         operationType,
         session,
@@ -550,7 +610,9 @@ export abstract class ToolBase {
         telemetry,
         elicitation,
         uiRegistry,
-    }: ToolConstructorParams) {
+        context,
+    }: ToolConstructorParams<TContext>) {
+        this.name = name;
         this.category = category;
         this.operationType = operationType;
         this.session = session;
@@ -558,6 +620,7 @@ export abstract class ToolBase {
         this.telemetry = telemetry;
         this.elicitation = elicitation;
         this.uiRegistry = uiRegistry;
+        this.context = context;
     }
 
     public register(server: Server): boolean {

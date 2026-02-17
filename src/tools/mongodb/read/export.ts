@@ -9,7 +9,7 @@ import { jsonExportFormat } from "../../../common/exportsManager.js";
 import { getAggregateArgs } from "./aggregate.js";
 
 export class ExportTool extends MongoDBToolBase {
-    public name = "export";
+    static toolName = "export";
     public description = "Export a query or aggregation results in the specified EJSON format.";
     public argsShape = {
         ...DbOperationArgs,
@@ -76,7 +76,6 @@ export class ExportTool extends MongoDBToolBase {
                 limit,
                 promoteValues: false,
                 bsonRegExp: true,
-                // @ts-expect-error signal is available in the driver but not NodeDriverServiceProvider MONGOSH-3142
                 signal,
             });
         } else {
@@ -85,7 +84,6 @@ export class ExportTool extends MongoDBToolBase {
                 promoteValues: false,
                 bsonRegExp: true,
                 allowDiskUse: true,
-                // @ts-expect-error signal is available in the driver but not NodeDriverServiceProvider MONGOSH-3142
                 signal,
             });
         }

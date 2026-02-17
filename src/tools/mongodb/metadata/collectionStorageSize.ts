@@ -3,7 +3,7 @@ import { DbOperationArgs, MongoDBToolBase } from "../mongodbTool.js";
 import type { ToolArgs, OperationType, ToolExecutionContext } from "../../tool.js";
 
 export class CollectionStorageSizeTool extends MongoDBToolBase {
-    public name = "collection-storage-size";
+    static toolName = "collection-storage-size";
     public description = "Gets the size of the collection";
     public argsShape = DbOperationArgs;
 
@@ -23,7 +23,6 @@ export class CollectionStorageSizeTool extends MongoDBToolBase {
                     { $group: { _id: null, value: { $sum: "$storageStats.size" } } },
                 ],
                 {
-                    // @ts-expect-error signal is available in the driver but not NodeDriverServiceProvider MONGOSH-3142
                     signal,
                 }
             )

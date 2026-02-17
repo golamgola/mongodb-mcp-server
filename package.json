@@ -1,7 +1,7 @@
 {
   "name": "mongodb-mcp-server",
   "description": "MongoDB Model Context Protocol Server",
-  "version": "1.5.1-prerelease.1",
+  "version": "1.6.0",
   "type": "module",
   "packageManager": "pnpm@10.23.0",
   "mcpName": "io.github.mongodb-js/mongodb-mcp-server",
@@ -102,10 +102,8 @@
     "@ai-sdk/openai": "^3.0.9",
     "@emotion/css": "^11.13.5",
     "@eslint/js": "^9.34.0",
-    "@leafygreen-ui/lib": "^15.7.0",
-    "@leafygreen-ui/table": "^15.2.2",
-    "@leafygreen-ui/tokens": "^4.2.0",
-    "@leafygreen-ui/typography": "^22.2.3",
+    "@lg-mcp/embeddable-uis": "^0.1.0",
+    "@lg-mcp/hooks": "^0.2.0",
     "@modelcontextprotocol/inspector": "^0.17.1",
     "@mongodb-js/oidc-mock-provider": "^0.12.0",
     "@redocly/cli": "^2.0.8",
@@ -132,8 +130,8 @@
     "husky": "^9.1.7",
     "jsdom": "^27.3.0",
     "knip": "^5.63.1",
-    "mongodb": "^6.21.0",
-    "mongodb-runner": "^6.2.0",
+    "mongodb": "^7.1.0",
+    "mongodb-runner": "^6.6.1",
     "openapi-types": "^12.1.3",
     "openapi-typescript": "^7.9.1",
     "prettier": "^3.6.2",
@@ -158,13 +156,13 @@
     "@mongodb-js/device-id": "^0.3.1",
     "@mongodb-js/devtools-proxy-support": "^0.7.2",
     "@mongosh/arg-parser": "3.23.0",
-    "@mongosh/service-provider-node-driver": "^3.17.5",
+    "@mongosh/service-provider-node-driver": "^5.0.0",
     "ai": "^6.0.33",
     "bson": "^6.10.4",
     "express": "^5.1.0",
     "lru-cache": "^11.1.0",
     "mongodb-build-info": "^1.9.0",
-    "mongodb-connection-string-url": "^3.0.1 || ^7.0.0",
+    "mongodb-connection-string-url": "^7.0.1",
     "mongodb-log-writer": "^2.4.1",
     "mongodb-redact": "^1.3.0",
     "mongodb-schema": "^12.6.2",
@@ -181,16 +179,18 @@
   },
   "optionalDependencies": {
     "@mongodb-js/atlas-local": "^1.1.0",
-    "kerberos": "^2.2.2"
+    "kerberos": "^7.0.0"
   },
   "pnpm": {
     "overrides": {
-      "mongodb": "^6.21.0",
-      "kerberos": "^2.2.2"
+      "mongodb": "^7.1.0",
+      "kerberos": "^7.0.0",
+      "bson": "^7.2.0"
     }
   },
   "overrides": {
-    "mongodb": "^6.21.0",
-    "kerberos": "^2.2.2"
+    "mongodb": "^7.1.0",
+    "kerberos": "^7.0.0",
+    "bson": "^7.2.0"
   }
 }

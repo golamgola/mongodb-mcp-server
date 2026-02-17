@@ -9,7 +9,7 @@ import { FindArgs } from "../read/find.js";
 import { CountArgs } from "../read/count.js";
 
 export class ExplainTool extends MongoDBToolBase {
-    public name = "explain";
+    static toolName = "explain";
     public description =
         "Returns statistics describing the execution of the winning plan chosen by the query optimizer for the evaluated method";
 
@@ -71,7 +71,6 @@ export class ExplainTool extends MongoDBToolBase {
                         collection,
                         pipeline,
                         {
-                            // @ts-expect-error signal is available in the driver but not NodeDriverServiceProvider MONGOSH-3142
                             signal,
                         },
                         {
@@ -86,7 +85,6 @@ export class ExplainTool extends MongoDBToolBase {
                 result = await provider
                     .find(database, collection, filter as Document, {
                         ...rest,
-                        // @ts-expect-error signal is available in the driver but not NodeDriverServiceProvider MONGOSH-3142
                         signal,
                     })
                     .explain(verbosity);

@@ -13,7 +13,7 @@ export const CountArgs = {
 };
 
 export class CountTool extends MongoDBToolBase {
-    public name = "count";
+    static toolName = "count";
     public description =
         "Gets the number of documents in a MongoDB collection using db.collection.count() and query as an optional filter parameter";
     public argsShape = {
@@ -55,7 +55,6 @@ export class CountTool extends MongoDBToolBase {
         }
 
         const count = await provider.countDocuments(database, collection, query, {
-            // @ts-expect-error signal is available in the driver but not NodeDriverServiceProvider MONGOSH-3142
             signal,
         });
 
