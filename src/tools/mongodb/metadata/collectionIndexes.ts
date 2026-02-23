@@ -89,7 +89,7 @@ export class CollectionIndexesTool extends MongoDBToolBase {
             };
         }
 
-        return super.handleError(error, args);
+        return super.handleError(error, args) as ToolResult | Promise<ToolResult>;
     }
 
     /**
