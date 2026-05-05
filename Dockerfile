@@ -9,7 +9,7 @@ ENV MDB_MCP_LOGGERS=stderr,mcp
 EXPOSE 8081
 # Use npx so the container can pick up a connection string at runtime via env var.
 # Use ${PORT:-8081} so Cloud Run's $PORT is honored if set (recommended), otherwise default to 8081.
-ENTRYPOINT ["sh", "-c", "exec npx -y mongodb-mcp-server@latest --transport http --httpHost=0.0.0.0 --httpPort=${PORT:-8081} --connectionString=\"$MONGODB_CONNECTION_STRING\" --loggers stderr"]
+ENTRYPOINT ["sh", "-c", "exec npx -y mongodb-mcp-server --transport http --httpHost=0.0.0.0 --httpPort=${PORT:-8081} --connectionString=\"$MONGODB_CONNECTION_STRING\" --loggers stderr"]
 LABEL maintainer="MongoDB Inc <info@mongodb.com>"
 LABEL description="MongoDB MCP Server"
 LABEL version=${VERSION}
